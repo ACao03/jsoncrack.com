@@ -13,20 +13,21 @@ export interface CustomNodeProps {
   x: number;
   y: number;
   hasCollapse?: boolean;
+  selected?: boolean;
 }
 
 const CustomNodeWrapper = (nodeProps: NodeProps<NodeData>) => {
   const setSelectedNode = useGraph(state => state.setSelectedNode);
+  // clicking a node should select it; edit button will be shown on selection
   const setVisible = useModal(state => state.setVisible);
+  const selectedNode = useGraph(state => state.selectedNode);
   const colorScheme = useComputedColorScheme();
 
-  const handleNodeClick = React.useCallback(
-    (_: React.MouseEvent<SVGGElement, MouseEvent>, data: NodeData) => {
-      if (setSelectedNode) setSelectedNode(data);
-      setVisible("NodeModal", true);
-    },
-    [setSelectedNode, setVisible]
-  );
+  const handleNodeClick = React.useCallback((_: React.MouseEvent<SVGGElement, MouseEvent>, data: NodeData) => {
+    if (setSelectedNode) setSelectedNode(data);
+    // Open NodeModal on click so user can view details and edit from modal
+    setVisible("NodeModal", true);
+  }, [setSelectedNode, setVisible]);
 
   return (
     <Node
@@ -48,9 +49,11 @@ const CustomNodeWrapper = (nodeProps: NodeProps<NodeData>) => {
     >
       {({ node, x, y }) => {
         const hasKey = nodeProps.properties.text[0].key;
-        if (!hasKey) return <TextNode node={nodeProps.properties as NodeData} x={x} y={y} />;
+        const isSelected = selectedNode?.id === node.id;
+        if (!hasKey)
+          return <TextNode node={nodeProps.properties as NodeData} x={x} y={y} selected={isSelected} />;
 
-        return <ObjectNode node={node as NodeData} x={x} y={y} />;
+        return <ObjectNode node={node as NodeData} x={x} y={y} selected={isSelected} />;
       }}
     </Node>
   );

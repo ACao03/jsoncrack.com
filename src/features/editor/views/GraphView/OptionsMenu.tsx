@@ -38,6 +38,8 @@ export const OptionsMenu = () => {
   const imagePreviewEnabled = useConfig(state => state.imagePreviewEnabled);
   const setDirection = useGraph(state => state.setDirection);
   const direction = useGraph(state => state.direction);
+  const editingEnabled = useGraph(state => state.editingEnabled);
+  const toggleEditing = useGraph(state => state.toggleEditing);
   const setVisible = useModal(state => state.setVisible);
   const [coreKey, setCoreKey] = React.useState("CTRL");
 
@@ -153,6 +155,15 @@ export const OptionsMenu = () => {
                 }}
               >
                 <Text size="xs">Image Link Preview</Text>
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<BsCheck2 opacity={editingEnabled ? 100 : 0} />}
+                onClick={() => {
+                  toggleEditing();
+                  gaEvent("toggle_edit_mode", { label: editingEnabled ? "off" : "on" });
+                }}
+              >
+                <Text size="xs">Enable Diagram Editing</Text>
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>

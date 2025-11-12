@@ -1,8 +1,10 @@
 import type { ViewPort } from "react-zoomable-ui/dist/ViewPort";
 import type { CanvasDirection } from "reaflow/dist/layout/elkLayout";
 import { create } from "zustand";
+import { modify, applyEdits } from "jsonc-parser";
 import { SUPPORTED_LIMIT } from "../../../../../constants/graph";
 import useJson from "../../../../../store/useJson";
+import useFile from "../../../../../store/useFile";
 import type { EdgeData, NodeData } from "../../../../../types/graph";
 import { parser } from "../lib/jsonParser";
 
@@ -16,6 +18,7 @@ export interface Graph {
   selectedNode: NodeData | null;
   path: string;
   aboveSupportedLimit: boolean;
+  editingEnabled?: boolean;
 }
 
 const initialStates: Graph = {
@@ -28,6 +31,7 @@ const initialStates: Graph = {
   selectedNode: null,
   path: "",
   aboveSupportedLimit: false,
+  editingEnabled: false,
 };
 
 interface GraphActions {
@@ -36,6 +40,14 @@ interface GraphActions {
   setDirection: (direction: CanvasDirection) => void;
   setViewPort: (ref: ViewPort) => void;
   setSelectedNode: (nodeData: NodeData) => void;
+  /**
+   * Update a node's value in the underlying JSON and persist it back to the editor.
+   * - path: jsonc-parser style path to the node
+   * - key: if provided, the row key to target (for object properties)
+   * - newValue: the new value to set (will attempt JSON.parse, otherwise treated as string)
+   */
+  updateNodeValue: (path: Array<string | number> | undefined, key: string | null | undefined, newValue: any) => void;
+  toggleEditing: (value?: boolean) => void;
   focusFirstNode: () => void;
   toggleFullscreen: (value: boolean) => void;
   zoomIn: () => void;
@@ -101,6 +113,61 @@ const useGraph = create<Graph & GraphActions>((set, get) => ({
   },
   toggleFullscreen: fullscreen => set({ fullscreen }),
   setViewPort: viewPort => set({ viewPort }),
+  toggleEditing: (value = undefined) => {
+    const current = get().editingEnabled;
+    if (typeof value === "boolean") set({ editingEnabled: value });
+    else set({ editingEnabled: !current });
+  },
+  updateNodeValue: (path, key, newValue) => {
+    try {
+      const currentJson = useJson.getState().getJson ? useJson.getState().getJson() : useJson.getState().json;
+
+      // If no path provided, and no key, assume replacing whole document
+      const targetPath: Array<string | number> = Array.isArray(path) ? [...path] : [];
+      if (typeof key !== "undefined" && key !== null) targetPath.push(key as any);
+
+      // Try parse the new value to preserve types (number, boolean, null, objects)
+      let parsedNewValue: any = newValue;
+      if (typeof newValue === "string") {
+        try {
+          parsedNewValue = JSON.parse(newValue);
+        } catch (e) {
+          // fallback to string
+          parsedNewValue = newValue;
+        }
+      }
+
+      if (targetPath.length === 0) {
+        // Replacing whole document
+        const final = typeof parsedNewValue === "string" ? parsedNewValue : JSON.stringify(parsedNewValue, null, 2);
+        useJson.getState().setJson(final);
+        return;
+      }
+
+      const edits = modify(currentJson, targetPath as any, parsedNewValue, {
+        formattingOptions: { insertSpaces: true, tabSize: 2 },
+      });
+
+      const newText = applyEdits(currentJson, edits);
+      useJson.getState().setJson(newText);
+      // Also update the file store contents so left-hand editor updates
+      useFile.getState().setContents({ contents: newText, hasChanges: true, skipUpdate: false });
+
+      // After applying edits, refresh selectedNode to the updated node (if path provided)
+      try {
+        const { nodes: newNodes } = parser(newText);
+        const targetPathStr = JSON.stringify(targetPath);
+        const found = newNodes.find(n => JSON.stringify(n.path ?? []) === targetPathStr);
+        if (found) set({ selectedNode: found });
+        else if (targetPath.length === 0 && newNodes.length > 0) set({ selectedNode: newNodes[0] });
+      } catch (e) {
+        // ignore parser errors here
+      }
+    } catch (err) {
+      // silently ignore for now; could surface to UI
+      // console.error(err);
+    }
+  },
 }));
 
 export default useGraph;
